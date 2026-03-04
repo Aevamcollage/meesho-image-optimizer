@@ -1,0 +1,720 @@
+================================================================================
+MEESHO IMAGE OPTIMIZER - COMPLETE IMPLEMENTATION PLAN
+================================================================================
+
+PROJECT OVERVIEW
+================================================================================
+The Meesho Image Optimizer is an Expo mobile app that enables sellers to edit 
+product images to reduce shipping costs on Meesho and similar e-commerce platforms.
+
+KEY INSIGHT:
+Meesho calculates shipping charges based on multiple factors including:
+  - Packed product weight (entered by seller)
+  - Delivery zone (Local/Regional/National)
+  - Image dimensions and file size (used for volumetric weight estimation)
+  - Reverse logistics (RTO - Returns to Origin)
+
+By optimizing images (adding padding, adjusting dimensions, changing background),
+sellers can potentially reduce the estimated product size/weight, thereby lowering
+shipping charges by ₹10-₹40 per order.
+
+
+MEESHO IMAGE REQUIREMENTS & GUIDELINES (2026)
+================================================================================
+
+MANDATORY IMAGE SPECIFICATIONS:
+  - Aspect Ratio: 1:1 (Square)
+  - Recommended Size: 1000 × 1000 pixels
+  - Minimum Size: 500 × 500 pixels
+  - Maximum File Size: 10 MB
+  - Formats: JPEG or PNG
+  - Background: White or light-colored (preferred)
+
+DISALLOWED ELEMENTS:
+  - Text overlays
+  - Logos or watermarks
+  - Borders or collages
+  - Blurry or pixelated images
+  - Stock photos (must be original)
+
+NUMBER OF IMAGES:
+  - Minimum: 3 images per product
+  - Maximum: 8 images per product
+  - Show: Front, back, close-up, fabric details, size chart (if apparel)
+
+SHIPPING COST OPTIMIZATION TECHNIQUE:
+  - Position product smaller and farther in the 1:1 square frame
+  - Add extra white space/padding around the product
+  - This "tricks" Meesho's algorithm into estimating lower size/weight
+  - Avoid close-ups that make items look bulky (increases costs)
+
+
+ARCHITECTURE & TECH STACK
+================================================================================
+
+FRONTEND (Mobile App):
+  - Framework: Expo (React Native)
+  - Language: TypeScript
+  - UI Framework: NativeWind (Tailwind CSS for React Native)
+  - State Management: React Context + AsyncStorage (local storage)
+  - Image Handling: expo-image-picker (camera/gallery), expo-image-manipulator
+  - Navigation: Expo Router (file-based routing)
+
+BACKEND (Image Processing Server):
+  - Framework: Python Flask or FastAPI
+  - Image Processing: OpenCV (cv2)
+  - Additional Libraries:
+    * Pillow (PIL) - image manipulation
+    * NumPy - numerical operations
+    * scikit-image - advanced image processing
+  - Deployment: Local server (can be containerized with Docker)
+
+DATABASE:
+  - Local: SQLite (optional, for storing editing history)
+  - Cloud: PostgreSQL (optional, for cross-device sync)
+  - Default: AsyncStorage (no backend required for MVP)
+
+API COMMUNICATION:
+  - HTTP/REST API between mobile app and backend
+  - Endpoint: http://localhost:5000 (development)
+  - Request Format: Multipart form-data (image upload)
+  - Response Format: JSON (edited image URLs or Base64)
+
+
+FEATURE BREAKDOWN & IMPLEMENTATION DETAILS
+================================================================================
+
+PHASE 1: CORE IMAGE EDITING FEATURES
+================================================================================
+
+1.1 IMAGE IMPORT
+   Description: Allow users to select images from device camera or gallery
+   Implementation:
+     - Use expo-image-picker to capture or select images
+     - Validate image format (JPG, PNG only)
+     - Validate image size (max 10 MB)
+     - Display preview of selected image
+   Backend: None required (local processing)
+
+1.2 IMAGE RESIZE & SCALE
+   Description: Resize image to Meesho-compliant dimensions
+   Implementation:
+     - Allow users to select target size:
+       * 500 × 500 px (minimum)
+       * 750 × 750 px (medium)
+       * 1000 × 1000 px (recommended)
+     - Maintain 1:1 aspect ratio
+     - Preserve image quality (high compression)
+   Backend Endpoint: POST /api/resize
+     - Input: Image file, target_width, target_height
+     - Output: Resized image (Base64 or URL)
+     - OpenCV: cv2.resize() with interpolation=cv2.INTER_LANCZOS4
+
+1.3 IMAGE ROTATION
+   Description: Rotate image by user-specified degrees
+   Implementation:
+     - Provide rotation controls (0°, 90°, 180°, 270°, or custom angle)
+     - Allow fine-tuning with slider (±45°)
+     - Auto-crop to remove black borders after rotation
+   Backend Endpoint: POST /api/rotate
+     - Input: Image file, rotation_angle
+     - Output: Rotated image
+     - OpenCV: cv2.getRotationMatrix2D() + cv2.warpAffine()
+
+1.4 PADDING & BORDER ADDITION
+   Description: Add white space/padding around product to reduce visual size
+   Implementation:
+     - Preset padding options:
+       * Small (10% padding)
+       * Medium (20% padding)
+       * Large (30% padding)
+       * Custom (user-defined percentage)
+     - Padding color: White (RGB: 255, 255, 255) or light gray
+     - Maintain square aspect ratio after padding
+   Backend Endpoint: POST /api/add-padding
+     - Input: Image file, padding_percentage, padding_color
+     - Output: Padded image
+     - OpenCV: cv2.copyMakeBorder() with borderType=cv2.BORDER_CONSTANT
+
+1.5 BACKGROUND REMOVAL & REPLACEMENT
+   Description: Remove product background and replace with white/light color
+   Implementation:
+     - Use background removal algorithm (rembg library or OpenCV)
+     - Replace background with solid white (RGB: 255, 255, 255)
+     - Option to keep original background if already white
+     - Preserve product edges (anti-aliasing)
+   Backend Endpoint: POST /api/remove-background
+     - Input: Image file
+     - Output: Image with white background
+     - Library: rembg (Python) or OpenCV contour detection
+
+1.6 BRIGHTNESS & CONTRAST ADJUSTMENT
+   Description: Enhance image visibility and quality
+   Implementation:
+     - Brightness slider: -50% to +50%
+     - Contrast slider: -50% to +50%
+     - Saturation slider: -50% to +50%
+     - Preview changes in real-time
+   Backend Endpoint: POST /api/adjust-brightness
+     - Input: Image file, brightness_value, contrast_value, saturation_value
+     - Output: Adjusted image
+     - OpenCV: cv2.convertScaleAbs(), cv2.addWeighted()
+
+1.7 CROP & FRAME ADJUSTMENT
+   Description: Crop image to remove unwanted areas and adjust framing
+   Implementation:
+     - Freeform crop tool (user draws crop area)
+     - Preset crop ratios (1:1, 4:3, 16:9)
+     - Auto-center product in frame
+     - Ensure minimum 500×500 px after crop
+   Backend Endpoint: POST /api/crop
+     - Input: Image file, crop_coordinates (x, y, width, height)
+     - Output: Cropped image
+     - OpenCV: image[y:y+height, x:x+width]
+
+
+PHASE 2: ADVANCED EDITING FEATURES
+================================================================================
+
+2.1 BATCH PROCESSING
+   Description: Apply same edits to multiple images at once
+   Implementation:
+     - Select multiple images from gallery
+     - Apply preset editing template
+     - Download all edited images as ZIP
+   Backend Endpoint: POST /api/batch-process
+     - Input: Multiple image files, editing_template
+     - Output: ZIP file with all edited images
+
+2.2 PRESET TEMPLATES
+   Description: Pre-configured editing profiles optimized for different product types
+   Implementation:
+     - Template 1: "Clothing" - 20% padding, white background, brightness +10
+     - Template 2: "Electronics" - 15% padding, white background, contrast +15
+     - Template 3: "Accessories" - 25% padding, white background, saturation +10
+     - Template 4: "Custom" - user-defined settings
+   Backend: Store templates as JSON configuration
+
+2.3 BEFORE/AFTER COMPARISON
+   Description: Side-by-side preview of original vs. edited image
+   Implementation:
+     - Split-screen view with slider
+     - Show estimated shipping cost reduction
+     - Display file size comparison
+   Frontend: React Native Image component with gesture handler
+
+2.4 ESTIMATED SHIPPING COST CALCULATOR
+   Description: Estimate potential shipping cost reduction
+   Implementation:
+     - Input: Original image dimensions, edited image dimensions
+     - Calculate volumetric weight reduction
+     - Display estimated cost savings (₹10-₹40 range)
+     - Note: This is an approximation based on public data
+   Backend Endpoint: POST /api/estimate-shipping
+     - Input: Original_dimensions, edited_dimensions, product_category
+     - Output: Estimated_cost_reduction, shipping_range
+
+
+PHASE 3: USER INTERFACE & EXPERIENCE
+================================================================================
+
+3.1 SCREEN STRUCTURE
+   
+   Screen 1: HOME / DASHBOARD
+     - Welcome message
+     - "Start Editing" button
+     - Recent edits history
+     - Quick tips for reducing shipping costs
+   
+   Screen 2: IMAGE IMPORT
+     - Camera button (capture new photo)
+     - Gallery button (select from device)
+     - Image preview after selection
+     - "Next" button to proceed to editing
+   
+   Screen 3: EDITING TOOLS (Main Screen)
+     - Tabs for different editing tools:
+       * Resize
+       * Rotate
+       * Padding
+       * Background
+       * Brightness/Contrast
+       * Crop
+     - Live preview of edited image
+     - Before/After comparison toggle
+     - Undo/Redo buttons
+   
+   Screen 4: EXPORT & DOWNLOAD
+     - Preview final edited image
+     - File size and dimensions display
+     - Estimated shipping cost reduction
+     - Download button (save to gallery)
+     - Share button (share via social/email)
+     - "Edit Again" or "Start New" buttons
+   
+   Screen 5: SETTINGS
+     - App preferences
+     - Default padding percentage
+     - Default image size
+     - Background color preference
+     - Clear history option
+
+3.2 USER FLOW
+   
+   1. User opens app → Home screen
+   2. User taps "Start Editing" → Image Import screen
+   3. User selects image from camera or gallery → Image preview
+   4. User taps "Next" → Editing Tools screen
+   5. User applies edits (resize, padding, background, etc.)
+   6. User previews before/after comparison
+   7. User taps "Export" → Export & Download screen
+   8. User downloads edited image to gallery
+   9. User can share or edit again
+
+
+PHASE 4: BACKEND API SPECIFICATION
+================================================================================
+
+BASE URL: http://localhost:5000 (development)
+
+ENDPOINTS:
+
+1. POST /api/resize
+   Request:
+     - image: File (multipart)
+     - width: Integer (500-1000)
+     - height: Integer (500-1000)
+   Response:
+     - image_base64: String (Base64-encoded image)
+     - file_size: Integer (bytes)
+     - dimensions: Object {width, height}
+
+2. POST /api/rotate
+   Request:
+     - image: File (multipart)
+     - angle: Float (-180 to 180)
+   Response:
+     - image_base64: String
+     - file_size: Integer
+     - dimensions: Object
+
+3. POST /api/add-padding
+   Request:
+     - image: File (multipart)
+     - padding_percentage: Integer (0-50)
+     - padding_color: String ("white" or hex color)
+   Response:
+     - image_base64: String
+     - file_size: Integer
+     - dimensions: Object
+
+4. POST /api/remove-background
+   Request:
+     - image: File (multipart)
+     - background_color: String ("white" or hex color)
+   Response:
+     - image_base64: String
+     - file_size: Integer
+     - dimensions: Object
+
+5. POST /api/adjust-brightness
+   Request:
+     - image: File (multipart)
+     - brightness: Float (-50 to 50)
+     - contrast: Float (-50 to 50)
+     - saturation: Float (-50 to 50)
+   Response:
+     - image_base64: String
+     - file_size: Integer
+
+6. POST /api/crop
+   Request:
+     - image: File (multipart)
+     - x: Integer (crop start x)
+     - y: Integer (crop start y)
+     - width: Integer (crop width)
+     - height: Integer (crop height)
+   Response:
+     - image_base64: String
+     - file_size: Integer
+     - dimensions: Object
+
+7. POST /api/estimate-shipping
+   Request:
+     - original_width: Integer
+     - original_height: Integer
+     - edited_width: Integer
+     - edited_height: Integer
+     - product_category: String ("clothing", "electronics", "accessories")
+   Response:
+     - estimated_reduction: String ("₹10-₹20")
+     - percentage_reduction: Float (10-40%)
+     - note: String (disclaimer)
+
+
+PHASE 5: TECHNICAL IMPLEMENTATION DETAILS
+================================================================================
+
+BACKEND SETUP (Python Flask):
+
+1. Project Structure:
+   backend/
+   ├── app.py (main Flask app)
+   ├── requirements.txt (dependencies)
+   ├── config.py (configuration)
+   ├── routes/
+   │   ├── __init__.py
+   │   ├── image_processing.py (image edit endpoints)
+   │   └── utils.py (helper functions)
+   ├── services/
+   │   ├── __init__.py
+   │   ├── opencv_service.py (OpenCV operations)
+   │   └── image_validator.py (validation logic)
+   └── uploads/ (temporary image storage)
+
+2. Dependencies (requirements.txt):
+   Flask==2.3.0
+   Flask-CORS==4.0.0
+   opencv-python==4.8.0.74
+   Pillow==10.0.0
+   numpy==1.24.0
+   scikit-image==0.21.0
+   rembg==2.0.50 (for background removal)
+   python-dotenv==1.0.0
+
+3. Key Functions (OpenCV Service):
+
+   def resize_image(image_path, width, height):
+       """Resize image to specified dimensions"""
+       img = cv2.imread(image_path)
+       resized = cv2.resize(img, (width, height), interpolation=cv2.INTER_LANCZOS4)
+       return resized
+
+   def rotate_image(image_path, angle):
+       """Rotate image by specified angle"""
+       img = cv2.imread(image_path)
+       h, w = img.shape[:2]
+       center = (w // 2, h // 2)
+       matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+       rotated = cv2.warpAffine(img, matrix, (w, h))
+       return rotated
+
+   def add_padding(image_path, padding_percentage, color=(255, 255, 255)):
+       """Add padding around image"""
+       img = cv2.imread(image_path)
+       h, w = img.shape[:2]
+       padding = int(max(h, w) * (padding_percentage / 100))
+       padded = cv2.copyMakeBorder(img, padding, padding, padding, padding,
+                                   cv2.BORDER_CONSTANT, value=color)
+       # Resize to maintain square aspect ratio
+       padded = cv2.resize(padded, (1000, 1000), interpolation=cv2.INTER_LANCZOS4)
+       return padded
+
+   def remove_background(image_path, background_color=(255, 255, 255)):
+       """Remove background and replace with solid color"""
+       # Using rembg library
+       from rembg import remove
+       input_img = Image.open(image_path)
+       output_img = remove(input_img)
+       # Replace transparent areas with white background
+       background = Image.new('RGB', output_img.size, background_color)
+       background.paste(output_img, mask=output_img.split()[3])
+       return background
+
+   def adjust_brightness(image_path, brightness, contrast, saturation):
+       """Adjust brightness, contrast, and saturation"""
+       img = cv2.imread(image_path)
+       # Brightness adjustment
+       img = cv2.convertScaleAbs(img, alpha=1 + (brightness / 100), beta=0)
+       # Contrast adjustment (using CLAHE or simple scaling)
+       # Saturation adjustment using HSV color space
+       return img
+
+
+FRONTEND SETUP (Expo React Native):
+
+1. Project Structure:
+   app/
+   ├── (tabs)/
+   │   ├── _layout.tsx (tab navigation)
+   │   ├── index.tsx (home screen)
+   │   ├── editor.tsx (editing tools screen)
+   │   └── export.tsx (export screen)
+   ├── components/
+   │   ├── image-preview.tsx (image display component)
+   │   ├── editing-controls.tsx (editing tool buttons)
+   │   ├── before-after-slider.tsx (comparison slider)
+   │   └── shipping-calculator.tsx (cost estimation display)
+   ├── services/
+   │   ├── api-client.ts (HTTP client for backend)
+   │   └── image-service.ts (image handling logic)
+   ├── hooks/
+   │   ├── use-image-editing.ts (editing state management)
+   │   └── use-api.ts (API call hook)
+   └── constants/
+       └── config.ts (API endpoints, constants)
+
+2. Key Components:
+
+   ImagePreview.tsx:
+     - Display current image with editing applied
+     - Show dimensions and file size
+     - Update in real-time as user edits
+
+   EditingControls.tsx:
+     - Tab navigation for different editing tools
+     - Sliders for adjustable parameters
+     - Preset buttons for quick edits
+
+   BeforeAfterSlider.tsx:
+     - Split-screen comparison
+     - Draggable slider to reveal before/after
+     - Gesture handler for smooth interaction
+
+   ShippingCalculator.tsx:
+     - Display estimated shipping cost reduction
+     - Show percentage improvement
+     - Display file size comparison
+
+3. API Integration (api-client.ts):
+
+   const API_BASE_URL = 'http://localhost:5000';
+
+   export async function resizeImage(imageUri: string, width: number, height: number) {
+       const formData = new FormData();
+       formData.append('image', {
+           uri: imageUri,
+           type: 'image/jpeg',
+           name: 'image.jpg',
+       });
+       formData.append('width', width);
+       formData.append('height', height);
+
+       const response = await fetch(`${API_BASE_URL}/api/resize`, {
+           method: 'POST',
+           body: formData,
+       });
+       return response.json();
+   }
+
+   // Similar functions for rotate, add-padding, remove-background, etc.
+
+
+PHASE 6: DEPLOYMENT & TESTING
+================================================================================
+
+LOCAL DEVELOPMENT:
+
+1. Backend Setup:
+   - Install Python 3.9+
+   - Create virtual environment: python -m venv venv
+   - Activate: source venv/bin/activate (Linux/Mac) or venv\Scripts\activate (Windows)
+   - Install dependencies: pip install -r requirements.txt
+   - Run server: python app.py (runs on http://localhost:5000)
+
+2. Frontend Setup:
+   - Install Node.js 18+
+   - Install dependencies: npm install or pnpm install
+   - Run dev server: npm run dev (Expo Metro bundler)
+   - Test on device: Scan QR code with Expo Go app
+
+3. Testing Strategy:
+   - Unit tests for image processing functions (pytest)
+   - Integration tests for API endpoints
+   - E2E tests for mobile app workflows
+   - Manual testing on iOS and Android devices
+
+PRODUCTION DEPLOYMENT:
+
+1. Backend:
+   - Containerize with Docker
+   - Deploy to cloud (AWS, GCP, Azure, or Heroku)
+   - Set up environment variables for production
+   - Configure CORS for mobile app domain
+
+2. Frontend:
+   - Build APK for Android: eas build --platform android
+   - Build IPA for iOS: eas build --platform ios
+   - Submit to Google Play Store and Apple App Store
+   - Configure app signing and certificates
+
+
+PHASE 7: ESTIMATED SHIPPING COST CALCULATION
+================================================================================
+
+ALGORITHM:
+
+Meesho uses volumetric weight estimation:
+  Volumetric Weight = (Length × Width × Height) / Divisor
+  
+  Where Divisor typically ranges from 5000-6000 for standard packages
+
+Shipping Cost Factors:
+  1. Weight Slab (0-500g, 500g-1kg, 1-1.5kg, 1.5-2kg)
+  2. Delivery Zone (Local: ₹35-45, Regional: ₹45-70, National: ₹55-90)
+  3. Image Dimensions (used for volumetric estimation)
+
+OPTIMIZATION IMPACT:
+
+Original Image: 1000×1000 px with product taking 80% of frame
+  → Estimated volumetric weight: Higher
+  → Estimated shipping: ₹80-120 (national)
+
+Optimized Image: 1000×1000 px with product taking 40% of frame (with padding)
+  → Estimated volumetric weight: Lower (algorithm sees more white space)
+  → Estimated shipping: ₹50-80 (national)
+  → Savings: ₹20-40 per order
+
+DISCLAIMER:
+  - This is an approximation based on publicly available information
+  - Actual shipping costs depend on Meesho's proprietary algorithm
+  - Results may vary based on product category and actual package weight
+  - Users should test on Meesho seller panel to verify savings
+
+
+PHASE 8: DELIVERABLES & MILESTONES
+================================================================================
+
+MILESTONE 1: MVP (Minimum Viable Product)
+  - Image import (camera/gallery)
+  - Image resize (500×500, 750×750, 1000×1000)
+  - Padding addition (preset percentages)
+  - Image export/download
+  - Basic UI with tab navigation
+  Estimated Time: 2-3 weeks
+
+MILESTONE 2: Core Features
+  - Background removal and replacement
+  - Image rotation
+  - Brightness/Contrast/Saturation adjustment
+  - Crop tool
+  - Before/After comparison slider
+  Estimated Time: 2-3 weeks
+
+MILESTONE 3: Advanced Features
+  - Batch processing
+  - Preset templates
+  - Shipping cost calculator
+  - Editing history
+  - Settings screen
+  Estimated Time: 2 weeks
+
+MILESTONE 4: Polish & Deployment
+  - UI/UX refinements
+  - Performance optimization
+  - Testing and bug fixes
+  - App store submission
+  Estimated Time: 1-2 weeks
+
+TOTAL ESTIMATED TIME: 7-10 weeks
+
+
+DEPENDENCIES & PREREQUISITES
+================================================================================
+
+REQUIRED SOFTWARE:
+  - Node.js 18+ (for Expo)
+  - Python 3.9+ (for backend)
+  - Expo CLI (npm install -g expo-cli)
+  - Git (version control)
+
+REQUIRED LIBRARIES:
+  Frontend:
+    - expo, react-native, typescript
+    - expo-image-picker, expo-image-manipulator
+    - axios (HTTP client)
+    - react-native-reanimated (animations)
+  
+  Backend:
+    - Flask, Flask-CORS
+    - opencv-python, Pillow, numpy, scikit-image
+    - rembg (background removal)
+
+DEVICE REQUIREMENTS:
+  - iOS 13+ (for testing on iPhone)
+  - Android 6+ (for testing on Android)
+  - Minimum 2GB RAM
+  - 100MB free storage
+
+
+POTENTIAL CHALLENGES & SOLUTIONS
+================================================================================
+
+CHALLENGE 1: Background Removal Accuracy
+  - Problem: rembg library may not work perfectly on all product types
+  - Solution: Implement fallback to manual background selection tool
+  - Alternative: Use OpenCV contour detection for simpler products
+
+CHALLENGE 2: Image Processing Performance
+  - Problem: Large images (10MB) may cause app lag
+  - Solution: Compress images before processing, use worker threads
+  - Alternative: Offload heavy processing to backend server
+
+CHALLENGE 3: Cross-Platform Compatibility
+  - Problem: Image handling differs between iOS and Android
+  - Solution: Use Expo's abstraction layer (expo-image-picker, expo-file-system)
+  - Test thoroughly on both platforms
+
+CHALLENGE 4: Shipping Cost Accuracy
+  - Problem: Meesho's algorithm is proprietary and not publicly documented
+  - Solution: Provide estimated ranges with clear disclaimers
+  - Encourage users to test on Meesho seller panel
+
+CHALLENGE 5: Backend Server Stability
+  - Problem: Server may crash under heavy load (image processing is CPU-intensive)
+  - Solution: Implement request queuing, rate limiting, and error handling
+  - Monitor server performance and scale horizontally if needed
+
+
+FUTURE ENHANCEMENTS
+================================================================================
+
+1. AI-Powered Automatic Optimization
+   - Automatically detect product and apply optimal edits
+   - Machine learning model to predict best padding percentage
+
+2. Cloud Storage Integration
+   - Save editing history to cloud
+   - Sync across devices
+   - Share edited images with team members
+
+3. Marketplace Integration
+   - Direct upload to Meesho seller panel
+   - Integration with Flipkart, Amazon, WooCommerce
+
+4. Advanced Analytics
+   - Track shipping cost savings over time
+   - Generate reports for sellers
+   - Compare before/after metrics
+
+5. Batch Template Application
+   - Apply same edits to entire product catalog
+   - Bulk export for marketplace upload
+
+6. Real-Time Collaboration
+   - Share editing workspace with team
+   - Collaborative editing and feedback
+
+7. Mobile App for Backend Management
+   - Monitor server health and performance
+   - Manage user accounts and subscriptions
+
+
+CONCLUSION
+================================================================================
+
+The Meesho Image Optimizer is a practical tool that addresses a real pain point
+for e-commerce sellers: high shipping costs. By providing an intuitive mobile app
+with powerful image editing capabilities, sellers can optimize their product
+images to reduce volumetric weight estimation and lower shipping charges.
+
+The app combines:
+  - User-friendly mobile interface (Expo + React Native)
+  - Powerful image processing backend (Python + OpenCV)
+  - Practical features tailored to Meesho's requirements
+  - Clear value proposition (₹10-₹40 savings per order)
+
+This implementation plan provides a roadmap for building a production-ready app
+that can be deployed to iOS and Android app stores.
+
+================================================================================
